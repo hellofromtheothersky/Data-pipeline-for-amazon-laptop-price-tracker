@@ -131,3 +131,5 @@ dmypy.json
 *.json
 *.csv
 /logs
+test.*
+write_to_db.sql
