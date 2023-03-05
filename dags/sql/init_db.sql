@@ -8,8 +8,9 @@ create table if not exists laptop (
 
 create table if not exists price (
     id_laptop varchar(6),
-    dt date,
-    price int,
+    dt timestamp,
+    price float,
+    old_price float,
     primary key (id_laptop, dt)
 );
 

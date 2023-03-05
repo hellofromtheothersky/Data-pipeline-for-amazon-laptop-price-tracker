@@ -14,37 +14,51 @@ default_args = {
     'retry_delay': timedelta(minutes=1)
 }
 
-
 def transform_data():
     df=pd.read_csv('data/laptop_list.csv')
     df['id']=df['name'].apply(lambda x: hash(x)%1000000)
+
+    df['price']=df['price'].astype('str')
+    df['price']=df['price'].str.extract(r'(\d+\.\d*)')
+    df['price']=df['price'].astype('float')
+
+    df['old_price']=df['old_price'].str.extract(r'(\d+\.\d*)')
+    df['old_price']=df['old_price'].astype('float')
+
     df.to_csv('data/laptop_list_transformed.csv', index=False, mode='w')
 
 
-def fetch_data():
+def fetch_data(**context):
     df=pd.read_csv('data/laptop_list_transformed.csv')
-    values=[]
+    df=df.fillna('NULL')
+    # year, month, day, hour, *_ = context["data_interval_start"].timetuple()
 
-    def abc(row):
-        values.append([row['id'], row['name'], row['link']])
-    df.apply(lambda x: abc(x), axis=1)
-    
     with open('dags/sql/write_to_db.sql', 'w') as wf:
+        #laptop table
         wf.write("insert into laptop(id, name_laptop, link) values\n")
-        for i, val in enumerate(values):
-            wf.write("({}, '{}', '{}')".format(val[0], val[1], val[2]))
-            if i<len(values)-1:
+        for i in range(len(df)):
+            wf.write("({}, '{}', '{}')".format(df.iloc[i]['id'], df.iloc[i]['name'], df.iloc[i]['link']))
+            if i<len(df)-1:
                 wf.write(",")
             wf.write("\n")
-        wf.write("ON CONFLICT DO NOTHING")
-    
+        wf.write("ON CONFLICT DO NOTHING;\n")
+
+        #price table
+        wf.write("insert into price(id_laptop, dt, price, old_price) values\n")
+        for i in range(len(df)):
+            wf.write("({}, '{}', {}, {})".format(df.iloc[i]['id'], context["data_interval_start"], df.iloc[i]['price'], df.iloc[i]['old_price']))
+            if i<len(df)-1:
+                wf.write(",")
+            wf.write("\n")
+        wf.write("ON CONFLICT DO NOTHING;\n")
+
 
 with DAG( 
     default_args=default_args,
-    dag_id='amazon_laptop_ETL1',
+    dag_id='amazon_laptop_ETL',
     description='My first ETL project',
     start_date = datetime.now()- timedelta(days=2),
-    schedule_interval='@daily',
+    schedule_interval='0 0 * * *',
     catchup=False,
 ) as dag:
     crawl = BashOperator(
@@ -66,6 +80,7 @@ with DAG(
     fetch_data_=PythonOperator(
         task_id='fetch_data',
         python_callable=fetch_data,
+        provide_context=True,
     )
 
     write_to_database_ = PostgresOperator(
